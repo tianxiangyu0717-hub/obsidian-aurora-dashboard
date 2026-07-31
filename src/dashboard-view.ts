@@ -163,7 +163,7 @@ export class AuroraDashboardView extends ItemView {
     this.renderGalaxyGraph(graphSurface, snapshot.graph);
 
     const activitySurface = this.createSurface(
-      root,
+      focusGrid,
       "写作活动",
       this.activitySubtitle()
     );
@@ -556,9 +556,9 @@ export class AuroraDashboardView extends ItemView {
         const camera = graph.cameraPosition();
         graph.cameraPosition(
           {
-            x: camera.x * 0.5,
-            y: camera.y * 0.5,
-            z: camera.z * 0.5
+            x: camera.x * 0.25,
+            y: camera.y * 0.25,
+            z: camera.z * 0.25
           },
           { x: 0, y: 0, z: 0 },
           duration
@@ -648,31 +648,11 @@ export class AuroraDashboardView extends ItemView {
       values[Math.max(0, Math.floor(values.length * 0.9) - 1)] ??
       values.at(-1) ??
       1;
-    const body = surface.createDiv("aurora-heatmap-body");
-    const weekdayLabels = body.createDiv("aurora-heatmap-weekdays");
-    weekdayLabels.createSpan({ text: "" });
-    weekdayLabels.createSpan({ text: "一" });
-    weekdayLabels.createSpan({ text: "" });
-    weekdayLabels.createSpan({ text: "三" });
-    weekdayLabels.createSpan({ text: "" });
-    weekdayLabels.createSpan({ text: "五" });
-    weekdayLabels.createSpan({ text: "" });
-
-    const content = body.createDiv("aurora-heatmap-content");
-    const monthLabels = content.createDiv("aurora-heatmap-months");
-    monthNamesForRange(snapshot.activity).forEach((month) => {
-      monthLabels.createSpan({ text: month });
-    });
-
-    const grid = content.createDiv("aurora-heatmap-grid");
-    const firstDate = snapshot.activity[0]?.date;
-    if (firstDate) {
-      const firstDay = new Date(`${firstDate}T00:00:00`).getDay();
-      for (let index = 0; index < firstDay; index += 1) {
-        grid.createSpan("aurora-heatmap-placeholder");
-      }
-    }
     const today = localDateKey(new Date());
+    const grid = surface.createDiv("aurora-heatmap-grid");
+    grid.dataset.range = String(
+      this.plugin.data.settings.activityHistoryDays
+    );
     snapshot.activity.forEach((day) => {
       const cell = grid.createEl("button", {
         cls: "aurora-heatmap-cell",
@@ -684,9 +664,7 @@ export class AuroraDashboardView extends ItemView {
       cell.dataset.level = String(activityLevel(day.addedWords, max));
       if (day.estimated) cell.addClass("is-estimated");
       if (day.date === today) cell.addClass("is-today");
-      this.listen(cell, "click", () =>
-        this.openActivityDay(day)
-      );
+      this.listen(cell, "click", () => this.openActivityDay(day));
     });
 
     const legend = surface.createDiv("aurora-heatmap-legend");
@@ -1281,17 +1259,4 @@ function formatShortDate(date: string): string {
 function activityAriaLabel(day: DailyActivity): string {
   const source = day.estimated ? "，估算数据" : "";
   return `${formatDateLabel(day.date)}，${day.addedWords} 字，${day.edits} 次编辑${source}`;
-}
-
-function monthNamesForRange(activity: DailyActivity[]): string[] {
-  const months: string[] = [];
-  let previous = -1;
-  activity.forEach((day) => {
-    const month = new Date(`${day.date}T00:00:00`).getMonth();
-    if (month !== previous) {
-      months.push(`${month + 1}月`);
-      previous = month;
-    }
-  });
-  return months;
 }

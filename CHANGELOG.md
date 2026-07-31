@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1
+
+- Place Todo, Knowledge Graph, and Writing Activity in one responsive, edge-aligned three-card row.
+- Center the Todo empty state within the complete card body.
+- Increase the knowledge graph's initial apparent scale and preserve clearer visible connections.
+- Combine the past 12 months into one axis-free daily activity matrix.
+- Expand the activity matrix to fill its card and add subtle light-gray borders to every day cell.
+
 ## 0.2.0
 
 - Rename the displayed plugin to Dashboard and add a horizontally scrollable, manually ordered plugin shortcut strip.

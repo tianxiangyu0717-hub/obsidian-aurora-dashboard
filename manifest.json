@@ -1,7 +1,7 @@
 {
   "id": "aurora-dashboard",
   "name": "Dashboard",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "minAppVersion": "1.8.7",
   "description": "An interactive home dashboard for tasks, knowledge graph, plugins, vault health, and writing activity.",
   "author": "Sean",
