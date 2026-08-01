@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- Add a fourth focus module for the cumulative resolved-link count over the latest 365 days.
+- Render the link history as an interactive line-area chart with date, count, and estimate provenance on hover.
+- Store exact daily link-count snapshots locally from the first scan onward and transparently estimate earlier history from source-note modification dates.
+- Show Todo, Knowledge Graph, Writing Activity, and Link Count in one four-column row on wide panes and a responsive two-by-two grid on narrow panes.
+
 ## 0.2.1
 
 - Place Todo, Knowledge Graph, and Writing Activity in one responsive, edge-aligned three-card row.

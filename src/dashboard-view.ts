@@ -24,6 +24,7 @@ import { DetailModal, type DetailItem } from "./detail-modal";
 import type AuroraDashboardPlugin from "./main";
 import type {
   DailyActivity,
+  DailyLinkCount,
   DashboardSnapshot,
   InstalledPlugin,
   KnowledgeGraphSnapshot,
@@ -169,6 +170,15 @@ export class AuroraDashboardView extends ItemView {
     );
     activitySurface.addClass("aurora-activity-surface");
     this.renderHeatmap(activitySurface, snapshot);
+
+    const currentLinkCount = snapshot.linkHistory.at(-1)?.count ?? 0;
+    const linkSurface = this.createSurface(
+      focusGrid,
+      "双链数量",
+      `365 天 · ${formatCompactNumber(currentLinkCount)}`
+    );
+    linkSurface.addClass("aurora-link-surface");
+    this.renderLinkChart(linkSurface, snapshot.linkHistory);
 
     const issuesSurface = this.createSurface(
       root,
@@ -736,6 +746,69 @@ export class AuroraDashboardView extends ItemView {
     );
   }
 
+  private renderLinkChart(
+    surface: HTMLElement,
+    history: DailyLinkCount[]
+  ): void {
+    const chartWrap = surface.createDiv("aurora-link-chart-wrap");
+    const canvas = chartWrap.createEl("canvas", {
+      cls: "aurora-link-chart",
+      attr: {
+        role: "img",
+        "aria-label": "过去 365 天累计双链数量折线面积图"
+      }
+    });
+    const tooltip = chartWrap.createDiv("aurora-chart-tooltip");
+    tooltip.hide();
+    const draw = (): ChartGeometry =>
+      drawLinkChart(canvas, history, surface);
+    let geometry = draw();
+    const observer = new ResizeObserver(() => {
+      geometry = draw();
+    });
+    observer.observe(chartWrap);
+    this.renderDisposers.push(() => observer.disconnect());
+
+    this.listen(canvas, "mousemove", (event) => {
+      if (history.length === 0 || geometry.points.length === 0) return;
+      const rect = canvas.getBoundingClientRect();
+      const index = nearestPointIndex(
+        geometry.points,
+        event.clientX - rect.left
+      );
+      const point = geometry.points[index];
+      const day = history[index];
+      if (!point || !day) return;
+      tooltip.empty();
+      tooltip.createSpan({
+        cls: "aurora-chart-tooltip-date",
+        text: formatDateLabel(day.date)
+      });
+      tooltip.createSpan({
+        text: `${new Intl.NumberFormat("zh-CN").format(day.count)} 条累计双链`
+      });
+      if (day.estimated) {
+        tooltip.createSpan({
+          cls: "aurora-chart-tooltip-source",
+          text: "按源笔记修改日期估算"
+        });
+      }
+      tooltip.setCssProps({
+        "--aurora-tooltip-left": `${Math.min(rect.width - 145, Math.max(8, point.x - 55))}px`,
+        "--aurora-tooltip-top": `${Math.max(8, point.y - 66)}px`
+      });
+      tooltip.show();
+    });
+    this.listen(canvas, "mouseleave", () => tooltip.hide());
+
+    chartWrap.createDiv({
+      cls: "aurora-link-chart-note",
+      text: history.some((day) => day.estimated)
+        ? "历史按源笔记最后修改日期估算"
+        : "每日精确快照"
+    });
+  }
+
   private renderTrendChart(
     surface: HTMLElement,
     trend: DailyActivity[]
@@ -1179,6 +1252,108 @@ function drawTrendChart(
   return { points };
 }
 
+function drawLinkChart(
+  canvas: HTMLCanvasElement,
+  history: DailyLinkCount[],
+  tokenRoot: HTMLElement
+): ChartGeometry {
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(220, rect.width);
+  const height = Math.max(190, rect.height);
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.round(width * ratio);
+  canvas.height = Math.round(height * ratio);
+  const context = canvas.getContext("2d");
+  if (!context) return { points: [] };
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context.clearRect(0, 0, width, height);
+
+  const style = getComputedStyle(tokenRoot);
+  const gridColor =
+    style.getPropertyValue("--aurora-chart-grid").trim() ||
+    "rgba(136, 152, 170, 0.18)";
+  const lineColor =
+    style.getPropertyValue("--aurora-accent-purple").trim() || "#b48ead";
+  const areaColor =
+    style.getPropertyValue("--aurora-link-area").trim() ||
+    "rgba(180, 142, 173, 0.22)";
+  const textColor =
+    style.getPropertyValue("--aurora-text-muted").trim() || "#a3adba";
+  const padding = { top: 18, right: 14, bottom: 31, left: 39 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const maxValue = Math.max(1, ...history.map((day) => day.count));
+  const roundedMax = roundChartMax(maxValue);
+
+  context.font =
+    "10px var(--font-interface, -apple-system, BlinkMacSystemFont, sans-serif)";
+  context.textBaseline = "middle";
+  context.strokeStyle = gridColor;
+  context.fillStyle = textColor;
+  context.lineWidth = 1;
+  for (let step = 0; step <= 4; step += 1) {
+    const y = padding.top + (plotHeight / 4) * step;
+    context.beginPath();
+    context.moveTo(padding.left, y);
+    context.lineTo(width - padding.right, y);
+    context.stroke();
+    const value = roundedMax - (roundedMax / 4) * step;
+    context.textAlign = "right";
+    context.fillText(shortAxisNumber(value), padding.left - 7, y);
+  }
+
+  const points = history.map((day, index) => ({
+    x:
+      padding.left +
+      (history.length <= 1 ? 0 : (plotWidth * index) / (history.length - 1)),
+    y: padding.top + plotHeight * (1 - day.count / roundedMax)
+  }));
+
+  if (points.length > 0) {
+    const first = points[0]!;
+    const last = points.at(-1)!;
+    context.fillStyle = areaColor;
+    context.beginPath();
+    context.moveTo(first.x, padding.top + plotHeight);
+    points.forEach((point) => context.lineTo(point.x, point.y));
+    context.lineTo(last.x, padding.top + plotHeight);
+    context.closePath();
+    context.fill();
+
+    context.strokeStyle = lineColor;
+    context.lineWidth = 2;
+    context.lineJoin = "round";
+    context.lineCap = "round";
+    context.beginPath();
+    points.forEach((point, index) => {
+      if (index === 0) context.moveTo(point.x, point.y);
+      else context.lineTo(point.x, point.y);
+    });
+    context.stroke();
+
+    context.fillStyle = lineColor;
+    context.beginPath();
+    context.arc(last.x, last.y, 3.5, 0, Math.PI * 2);
+    context.fill();
+  }
+
+  context.fillStyle = textColor;
+  context.textAlign = "center";
+  const tickIndexes = [
+    0,
+    Math.floor((history.length - 1) / 2),
+    Math.max(0, history.length - 1)
+  ];
+  [...new Set(tickIndexes)].forEach((index) => {
+    const day = history[index];
+    const point = points[index];
+    if (!day || !point) return;
+    context.fillText(formatShortDate(day.date), point.x, height - 10);
+  });
+
+  return { points };
+}
+
 function nearestPointIndex(points: ChartPoint[], x: number): number {
   let bestIndex = 0;
   let bestDistance = Number.POSITIVE_INFINITY;
@@ -1198,7 +1373,10 @@ function roundChartMax(value: number): number {
 }
 
 function shortAxisNumber(value: number): string {
-  if (value >= 1000) return `${Math.round(value / 1000)}k`;
+  if (value >= 1000) {
+    const scaled = value / 1000;
+    return `${scaled >= 10 ? Math.round(scaled) : scaled.toFixed(1).replace(/\.0$/u, "")}k`;
+  }
   return String(Math.round(value));
 }
 

@@ -1,6 +1,7 @@
 import { TFile, TFolder, normalizePath } from "obsidian";
 import type { App } from "obsidian";
 import {
+  buildCumulativeLinkHistory,
   countWords,
   dayKeysEndingToday,
   extractOpenTasks,
@@ -12,6 +13,7 @@ import type {
   AuroraDataStore,
   DailyActivity,
   DashboardSnapshot,
+  DailyLinkCount,
   FolderSummary,
   KnowledgeGraphSnapshot,
   NoteMetric,
@@ -152,6 +154,8 @@ export class StatsService {
       (note) => localDateKey(note.file.stat.mtime) === today
     ).length;
     const activity = this.buildActivity(notes);
+    const graph = this.buildKnowledgeGraph(notes);
+    this.recordLinkSnapshot(graph.edges.length);
 
     return {
       generatedAt: Date.now(),
@@ -165,8 +169,9 @@ export class StatsService {
       modifiedToday,
       activity,
       trend: activity.slice(-30),
+      linkHistory: this.buildLinkHistory(notes, graph),
       folders: this.buildFolderSummaries(notes),
-      graph: this.buildKnowledgeGraph(notes)
+      graph
     };
   }
 
@@ -300,6 +305,48 @@ export class StatsService {
       })
       .filter((folder) => folder.noteCount > 0)
       .sort((left, right) => right.noteCount - left.noteCount);
+  }
+
+  private recordLinkSnapshot(count: number): void {
+    const today = localDateKey(new Date());
+    let changed = false;
+    if (this.store.data.linkTrackingStartedAt === null) {
+      this.store.data.linkTrackingStartedAt = Date.now();
+      changed = true;
+    }
+    if (this.store.data.linkSnapshots[today] !== count) {
+      this.store.data.linkSnapshots[today] = count;
+      changed = true;
+    }
+    const oldestRetained = dayKeysEndingToday(400)[0];
+    if (oldestRetained) {
+      Object.keys(this.store.data.linkSnapshots).forEach((date) => {
+        if (date < oldestRetained) {
+          delete this.store.data.linkSnapshots[date];
+          changed = true;
+        }
+      });
+    }
+    if (changed) this.store.requestDataSave();
+  }
+
+  private buildLinkHistory(
+    notes: NoteMetric[],
+    graph: KnowledgeGraphSnapshot
+  ): DailyLinkCount[] {
+    const notesByPath = new Map(
+      notes.map((note) => [note.file.path, note] as const)
+    );
+    const estimatedLinkDates = graph.edges.map((edge) => {
+      const source = notesByPath.get(edge.source);
+      return localDateKey(source?.file.stat.mtime ?? Date.now());
+    });
+    return buildCumulativeLinkHistory(
+      dayKeysEndingToday(365),
+      estimatedLinkDates,
+      this.store.data.linkSnapshots,
+      this.store.data.linkTrackingStartedAt
+    );
   }
 
   private buildKnowledgeGraph(notes: NoteMetric[]): KnowledgeGraphSnapshot {

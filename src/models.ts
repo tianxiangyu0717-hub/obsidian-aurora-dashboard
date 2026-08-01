@@ -24,8 +24,10 @@ export interface ActivityEntry {
 export interface AuroraPluginData {
   settings: AuroraSettings;
   activity: Record<string, ActivityEntry>;
+  linkSnapshots: Record<string, number>;
   fileWordCounts: Record<string, number>;
   trackingStartedAt: number | null;
+  linkTrackingStartedAt: number | null;
 }
 
 export interface OpenTask {
@@ -71,6 +73,12 @@ export interface DailyActivity {
   files: TFile[];
 }
 
+export interface DailyLinkCount {
+  date: string;
+  count: number;
+  estimated: boolean;
+}
+
 export interface FolderSummary {
   path: string;
   name: string;
@@ -91,6 +99,7 @@ export interface DashboardSnapshot {
   modifiedToday: number;
   activity: DailyActivity[];
   trend: DailyActivity[];
+  linkHistory: DailyLinkCount[];
   folders: FolderSummary[];
   graph: KnowledgeGraphSnapshot;
 }
@@ -116,6 +125,8 @@ export const DEFAULT_SETTINGS: AuroraSettings = {
 export const DEFAULT_DATA: AuroraPluginData = {
   settings: DEFAULT_SETTINGS,
   activity: {},
+  linkSnapshots: {},
   fileWordCounts: {},
-  trackingStartedAt: null
+  trackingStartedAt: null,
+  linkTrackingStartedAt: null
 };

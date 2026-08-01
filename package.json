@@ -1,6 +1,6 @@
 {
   "name": "obsidian-aurora-dashboard",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "An interactive Obsidian home dashboard for tasks, knowledge graph, plugins, vault health, and writing activity.",
   "main": "main.js",
   "type": "module",

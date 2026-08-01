@@ -1,4 +1,4 @@
-import type { OpenTask } from "./models";
+import type { DailyLinkCount, OpenTask } from "./models";
 
 export function normalizeTodoFilePath(value: string): string {
   const path = value
@@ -99,6 +99,42 @@ export function dayKeysEndingToday(days: number, now = new Date()): string[] {
   }
 
   return keys;
+}
+
+export function buildCumulativeLinkHistory(
+  dates: string[],
+  estimatedLinkDates: string[],
+  exactSnapshots: Record<string, number>,
+  trackingStartedAt: number | null
+): DailyLinkCount[] {
+  if (dates.length === 0) return [];
+  const firstDate = dates[0]!;
+  const estimatedByDate = new Map<string, number>();
+  let estimatedTotal = 0;
+  estimatedLinkDates.forEach((date) => {
+    if (date < firstDate) {
+      estimatedTotal += 1;
+      return;
+    }
+    estimatedByDate.set(date, (estimatedByDate.get(date) ?? 0) + 1);
+  });
+  const trackingStart = trackingStartedAt
+    ? localDateKey(trackingStartedAt)
+    : null;
+  let lastExact: number | null = null;
+
+  return dates.map((date) => {
+    estimatedTotal += estimatedByDate.get(date) ?? 0;
+    const exact = exactSnapshots[date];
+    if (exact !== undefined) {
+      lastExact = Math.max(0, exact);
+      return { date, count: lastExact, estimated: false };
+    }
+    if (trackingStart && date >= trackingStart && lastExact !== null) {
+      return { date, count: lastExact, estimated: true };
+    }
+    return { date, count: estimatedTotal, estimated: true };
+  });
 }
 
 export function activityLevel(value: number, max: number): number {

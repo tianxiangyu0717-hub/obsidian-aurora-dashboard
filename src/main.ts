@@ -183,8 +183,10 @@ export default class AuroraDashboardPlugin extends Plugin {
         ...(saved?.settings ?? {})
       },
       activity: saved?.activity ?? {},
+      linkSnapshots: saved?.linkSnapshots ?? {},
       fileWordCounts: saved?.fileWordCounts ?? {},
-      trackingStartedAt: saved?.trackingStartedAt ?? null
+      trackingStartedAt: saved?.trackingStartedAt ?? null,
+      linkTrackingStartedAt: saved?.linkTrackingStartedAt ?? null
     };
   }
 

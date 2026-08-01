@@ -26,6 +26,7 @@
   --aurora-heat-4: #ef7cad;
   --aurora-heat-5: #ffc1dc;
   --aurora-chart-grid: color-mix(in srgb, var(--text-muted) 20%, transparent);
+  --aurora-link-area: rgba(180, 142, 173, 0.22);
   box-sizing: border-box;
   width: min(100%, 1480px);
   min-height: 100%;
@@ -356,20 +357,22 @@
 }
 
 .aurora-focus-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: stretch;
   margin-bottom: 14px;
 }
 
 .aurora-todo-surface,
 .aurora-graph-surface,
-.aurora-activity-surface {
+.aurora-activity-surface,
+.aurora-link-surface {
   width: 100%;
   max-width: none;
 }
 
 .aurora-todo-surface,
-.aurora-activity-surface {
+.aurora-activity-surface,
+.aurora-link-surface {
   display: flex;
   height: 100%;
   min-height: 0;
@@ -378,6 +381,36 @@
 
 .aurora-activity-surface {
   overflow: hidden;
+}
+
+.aurora-link-chart-wrap {
+  position: relative;
+  min-height: 220px;
+  overflow: hidden;
+  border-top: 1px solid var(--aurora-border);
+  flex: 1;
+}
+
+.aurora-link-chart {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 220px;
+  cursor: crosshair;
+}
+
+.aurora-link-chart-note {
+  position: absolute;
+  right: 12px;
+  bottom: 26px;
+  color: var(--aurora-text-faint);
+  font-size: 8px;
+  pointer-events: none;
+}
+
+.aurora-chart-tooltip-source {
+  color: var(--aurora-text-faint);
+  font-size: 9px;
 }
 
 .aurora-lower-grid {
@@ -1297,25 +1330,17 @@
   .aurora-focus-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .aurora-activity-surface {
-    width: 100%;
-    max-width: none;
-    height: auto;
-    min-height: 270px;
-    grid-column: 1 / -1;
-  }
-
 }
 
-@container (max-width: 720px) {
+@container (max-width: 560px) {
   .aurora-focus-grid {
     grid-template-columns: 1fr;
   }
 
   .aurora-todo-surface,
   .aurora-graph-surface,
-  .aurora-activity-surface {
+  .aurora-activity-surface,
+  .aurora-link-surface {
     max-width: none;
     grid-column: auto;
   }
@@ -1331,8 +1356,7 @@
     padding: 28px 24px 36px;
   }
 
-  .aurora-lower-grid,
-  .aurora-focus-grid {
+  .aurora-lower-grid {
     grid-template-columns: 1fr;
     align-items: start;
   }

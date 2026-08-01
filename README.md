@@ -18,6 +18,7 @@ All analysis runs locally inside Obsidian.
 - An animated 3D galaxy knowledge graph powered by Three.js/WebGL, with orbit controls, moving link particles, tooltips, and clickable notes.
 - A horizontally scrollable, manually ordered list of installed plugin shortcuts.
 - A 365-day writing activity heatmap.
+- An interactive 365-day cumulative resolved-link line-area chart.
 - A 30-day added-word trend.
 - Recently modified notes.
 - Note and word totals for each top-level folder.
@@ -36,6 +37,7 @@ choose whether it replaces the active tab or opens in a new tab.
 | Empty or very short | Notes whose readable word count is at or below the configured threshold. The default is 10. |
 | Open tasks | Unchecked Markdown task items matching `- [ ]` in the configured Todo file only. No task file is read until a path is configured. |
 | Added words | Positive word-count deltas observed after the plugin starts tracking. Deletions do not reduce a day's total. |
+| Cumulative links | Current resolved metadata-cache links, recorded as an exact daily snapshot after tracking starts. Earlier dates are estimated from each source note's last-modified date. |
 
 Obsidian files do not contain an exact historical “words added per day” ledger.
 For dates before installation, Dashboard can estimate activity by
@@ -47,6 +49,7 @@ cells use a subtle opacity difference and can be disabled in settings.
 - No analytics, network calls, accounts, or cloud service.
 - Statistics and activity history stay in
   `.obsidian/plugins/aurora-dashboard/data.json`.
+- Daily resolved-link snapshots stay in the same local plugin data file.
 - The Todo module reads only the explicitly configured Markdown file and edits it only when you change or complete one of its tasks.
 - Excluded folders and their descendants are omitted from every metric.
 
