@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+- Reuse the existing 3D knowledge-graph renderer while its topology is unchanged, preventing repeated Dashboard scans from exhausting WebGL contexts.
+- Dispose Dashboard graph resources safely without forcing context loss that could disturb Obsidian's built-in graph renderer.
+- Fall back to an interactive 2D canvas graph with clickable notes and a retry control when WebGL is unavailable.
+
 ## 0.3.0
 
 - Add a fourth focus module for the cumulative resolved-link count over the latest 365 days.

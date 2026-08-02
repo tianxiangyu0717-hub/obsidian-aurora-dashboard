@@ -39,6 +39,7 @@ export const VIEW_TYPE_AURORA_DASHBOARD = "aurora-dashboard-view";
 export class AuroraDashboardView extends ItemView {
   private refreshTimer: number | null = null;
   private renderDisposers: Array<() => void> = [];
+  private galaxyGraphResource: GalaxyGraphResource | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -67,6 +68,7 @@ export class AuroraDashboardView extends ItemView {
 
   onClose(): Promise<void> {
     this.clearRenderResources();
+    this.disposeGalaxyGraph();
     if (this.refreshTimer !== null) {
       window.clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
@@ -110,6 +112,7 @@ export class AuroraDashboardView extends ItemView {
 
   private renderError(error: unknown): void {
     this.clearRenderResources();
+    this.disposeGalaxyGraph();
     this.contentEl.empty();
     const root = this.contentEl.createDiv(
       "aurora-dashboard aurora-dashboard-error"
@@ -531,6 +534,13 @@ export class AuroraDashboardView extends ItemView {
     surface: HTMLElement,
     snapshot: KnowledgeGraphSnapshot
   ): void {
+    const graphKey = knowledgeGraphKey(snapshot);
+    if (this.galaxyGraphResource?.key === graphKey) {
+      surface.appendChild(this.galaxyGraphResource.body);
+      return;
+    }
+
+    this.disposeGalaxyGraph();
     const body = surface.createDiv("aurora-galaxy-graph");
     if (snapshot.nodes.length === 0) {
       body.createDiv({ cls: "aurora-empty-state", text: "还没有可展示的连接" });
@@ -625,7 +635,10 @@ export class AuroraDashboardView extends ItemView {
       };
       if (!reduceMotion) animateStars();
 
-      this.renderDisposers.push(() => {
+      let disposed = false;
+      const dispose = (): void => {
+        if (disposed) return;
+        disposed = true;
         observer.disconnect();
         window.clearTimeout(focusTimer);
         if (animationFrame) window.cancelAnimationFrame(animationFrame);
@@ -633,17 +646,103 @@ export class AuroraDashboardView extends ItemView {
         stars.geometry.dispose();
         stars.material.dispose();
         graph._destructor();
-      });
-    } catch (error) {
+        body.remove();
+      };
+      this.galaxyGraphResource = { key: graphKey, body, dispose };
+    } catch {
       body.empty();
-      body.createDiv({
-        cls: "aurora-empty-state",
-        text:
-          error instanceof Error
-            ? `3D 图谱加载失败：${error.message}`
-            : "3D 图谱加载失败"
-      });
+      this.renderGalaxyFallback(body, graphKey, nodes, links);
     }
+  }
+
+  private renderGalaxyFallback(
+    body: HTMLElement,
+    graphKey: string,
+    nodes: GalaxyNode[],
+    links: GalaxyLink[]
+  ): void {
+    body.addClass("is-fallback");
+    const toolbar = body.createDiv("aurora-galaxy-fallback-toolbar");
+    toolbar.createSpan({ text: "2D 兼容图谱" });
+    const retry = toolbar.createEl("button", {
+      text: "重试 3D",
+      attr: { type: "button" }
+    });
+    const canvas = body.createEl("canvas", {
+      cls: "aurora-galaxy-fallback-canvas",
+      attr: {
+        role: "img",
+        "aria-label": "WebGL 不可用，当前显示可点击的二维知识图谱"
+      }
+    });
+    const tooltip = body.createDiv("aurora-galaxy-fallback-tooltip");
+    tooltip.hide();
+    let points: GalaxyCanvasPoint[] = [];
+    const draw = (): void => {
+      points = drawGalaxyFallback(canvas, nodes, links);
+    };
+    const observer = new ResizeObserver(draw);
+    observer.observe(body);
+    draw();
+
+    const nearestNode = (event: MouseEvent): GalaxyCanvasPoint | null => {
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      let nearest: GalaxyCanvasPoint | null = null;
+      let nearestDistance = 15;
+      points.forEach((point) => {
+        const distance = Math.hypot(point.x - x, point.y - y);
+        if (distance < nearestDistance) {
+          nearest = point;
+          nearestDistance = distance;
+        }
+      });
+      return nearest;
+    };
+    const handleMove = (event: MouseEvent): void => {
+      const point = nearestNode(event);
+      canvas.toggleClass("is-node-hovered", point !== null);
+      if (!point) {
+        tooltip.hide();
+        return;
+      }
+      tooltip.setText(`${point.node.file.basename} · ${point.node.degree} 个连接`);
+      tooltip.setCssProps({
+        "--aurora-tooltip-left": `${Math.min(body.clientWidth - 170, point.x + 10)}px`,
+        "--aurora-tooltip-top": `${Math.max(42, point.y - 22)}px`
+      });
+      tooltip.show();
+    };
+    const handleLeave = (): void => {
+      canvas.removeClass("is-node-hovered");
+      tooltip.hide();
+    };
+    const handleClick = (event: MouseEvent): void => {
+      const point = nearestNode(event);
+      if (point) void this.app.workspace.getLeaf(false).openFile(point.node.file);
+    };
+    const handleRetry = (): void => {
+      this.disposeGalaxyGraph();
+      void this.refresh(true);
+    };
+    canvas.addEventListener("mousemove", handleMove);
+    canvas.addEventListener("mouseleave", handleLeave);
+    canvas.addEventListener("click", handleClick);
+    retry.addEventListener("click", handleRetry);
+
+    let disposed = false;
+    const dispose = (): void => {
+      if (disposed) return;
+      disposed = true;
+      observer.disconnect();
+      canvas.removeEventListener("mousemove", handleMove);
+      canvas.removeEventListener("mouseleave", handleLeave);
+      canvas.removeEventListener("click", handleClick);
+      retry.removeEventListener("click", handleRetry);
+      body.remove();
+    };
+    this.galaxyGraphResource = { key: graphKey, body, dispose };
   }
 
   private renderHeatmap(
@@ -1077,6 +1176,17 @@ export class AuroraDashboardView extends ItemView {
     this.renderDisposers.forEach((dispose) => dispose());
     this.renderDisposers = [];
   }
+
+  private disposeGalaxyGraph(): void {
+    this.galaxyGraphResource?.dispose();
+    this.galaxyGraphResource = null;
+  }
+}
+
+interface GalaxyGraphResource {
+  key: string;
+  body: HTMLElement;
+  dispose: () => void;
 }
 
 interface GalaxyNode extends NodeObject {
@@ -1092,6 +1202,12 @@ interface GalaxyLink extends LinkObject<GalaxyNode> {
   target: string | GalaxyNode;
 }
 
+interface GalaxyCanvasPoint {
+  node: GalaxyNode;
+  x: number;
+  y: number;
+}
+
 interface ChartPoint {
   x: number;
   y: number;
@@ -1099,6 +1215,98 @@ interface ChartPoint {
 
 interface ChartGeometry {
   points: ChartPoint[];
+}
+
+function knowledgeGraphKey(snapshot: KnowledgeGraphSnapshot): string {
+  let hash = 2166136261;
+  const add = (value: string): void => {
+    for (const character of value) {
+      hash ^= character.codePointAt(0) ?? 0;
+      hash = Math.imul(hash, 16777619);
+    }
+  };
+  snapshot.nodes.forEach((node) => add(`${node.file.path}:${node.degree}|`));
+  snapshot.edges.forEach((edge) => add(`${edge.source}>${edge.target}|`));
+  return `${snapshot.nodes.length}:${snapshot.edges.length}:${hash >>> 0}`;
+}
+
+function drawGalaxyFallback(
+  canvas: HTMLCanvasElement,
+  nodes: GalaxyNode[],
+  links: GalaxyLink[]
+): GalaxyCanvasPoint[] {
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(300, rect.width);
+  const height = Math.max(340, rect.height);
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.round(width * ratio);
+  canvas.height = Math.round(height * ratio);
+  const context = canvas.getContext("2d");
+  if (!context) return [];
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = "#050612";
+  context.fillRect(0, 0, width, height);
+
+  let starSeed = 0x7a11ce;
+  const random = (): number => {
+    starSeed = (Math.imul(starSeed, 1664525) + 1013904223) >>> 0;
+    return starSeed / 0x100000000;
+  };
+  for (let index = 0; index < 120; index += 1) {
+    context.globalAlpha = 0.12 + random() * 0.38;
+    context.fillStyle = index % 3 === 0 ? "#ff63a7" : "#8fbcff";
+    context.beginPath();
+    context.arc(random() * width, random() * height, 0.35 + random(), 0, Math.PI * 2);
+    context.fill();
+  }
+  context.globalAlpha = 1;
+
+  const maxDegree = Math.max(1, ...nodes.map((node) => node.degree));
+  const points = nodes.map((node): GalaxyCanvasPoint => {
+    const hash = stableHash(node.id);
+    const angle = ((hash % 3600) / 3600) * Math.PI * 2;
+    const degreeWeight = Math.sqrt(node.degree / maxDegree);
+    const radius = 0.1 + (1 - degreeWeight) * 0.82;
+    const jitter = (((hash >>> 8) % 1000) / 1000 - 0.5) * 0.08;
+    return {
+      node,
+      x: width / 2 + Math.cos(angle) * width * 0.44 * (radius + jitter),
+      y: height / 2 + Math.sin(angle) * height * 0.4 * (radius + jitter)
+    };
+  });
+  const pointById = new Map(points.map((point) => [point.node.id, point]));
+  const endpointId = (endpoint: string | GalaxyNode): string =>
+    typeof endpoint === "string" ? endpoint : endpoint.id;
+
+  context.strokeStyle = "rgba(169, 150, 255, 0.28)";
+  context.lineWidth = 0.65;
+  links.forEach((link) => {
+    const source = pointById.get(endpointId(link.source));
+    const target = pointById.get(endpointId(link.target));
+    if (!source || !target) return;
+    context.beginPath();
+    context.moveTo(source.x, source.y);
+    context.lineTo(target.x, target.y);
+    context.stroke();
+  });
+
+  points
+    .slice()
+    .sort((left, right) => left.node.degree - right.node.degree)
+    .forEach((point) => {
+      const radius = 1.7 + Math.min(4.8, Math.log2(point.node.degree + 2));
+      context.shadowColor = point.node.color;
+      context.shadowBlur = 7;
+      context.fillStyle = point.node.color;
+      context.globalAlpha = 0.86;
+      context.beginPath();
+      context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      context.fill();
+    });
+  context.shadowBlur = 0;
+  context.globalAlpha = 1;
+  return points;
 }
 
 function createGalaxyStars(
