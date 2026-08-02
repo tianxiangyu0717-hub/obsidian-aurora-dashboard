@@ -1,19 +1,5 @@
 import { ItemView, Notice, TFile, setIcon } from "obsidian";
 import type { WorkspaceLeaf } from "obsidian";
-import ForceGraph3D from "3d-force-graph";
-import type {
-  ForceGraph3DInstance,
-  LinkObject,
-  NodeObject
-} from "3d-force-graph";
-import {
-  AdditiveBlending,
-  BufferGeometry,
-  Color,
-  Float32BufferAttribute,
-  Points,
-  PointsMaterial
-} from "three";
 import {
   activityLevel,
   formatCompactNumber,
@@ -551,156 +537,143 @@ export class AuroraDashboardView extends ItemView {
       id: node.file.path,
       file: node.file,
       degree: node.degree,
-      color: galaxyColor(node.file.path),
-      val: Math.max(1.1, Math.log2(node.degree + 2))
+      color: galaxyColor(node.file.path)
     }));
     const links: GalaxyLink[] = snapshot.edges.map((edge) => ({
       source: edge.source,
       target: edge.target
     }));
+    // Keep this renderer Canvas 2D-only. A second WebGL graph in Obsidian's
+    // Electron renderer can evict the native graph's GPU context.
+    const scene = createGalaxyScene(nodes, links);
+    const canvas = body.createEl("canvas", {
+      cls: "aurora-galaxy-canvas",
+      attr: {
+        role: "img",
+        "aria-label": "可旋转和缩放的 3D 星河知识图谱"
+      }
+    });
+    const tooltip = body.createDiv("aurora-galaxy-tooltip");
+    tooltip.hide();
+    let points: GalaxyCanvasPoint[] = [];
+    const camera: GalaxyCamera = {
+      yaw: -0.42,
+      pitch: 0.18,
+      zoom: 1.18
+    };
+    let animationFrame = 0;
+    let lastFrame = 0;
+    let visible = true;
+    let disposed = false;
     const reduceMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
     ).matches;
 
-    try {
-      const graph = new ForceGraph3D(body, {
-        controlType: "orbit",
-        rendererConfig: {
-          alpha: true,
-          antialias: true,
-          powerPreference: "high-performance"
-        }
-      }) as unknown as ForceGraph3DInstance<GalaxyNode, GalaxyLink>;
-      const focusGraph = (duration: number): void => {
-        graph.zoomToFit(0, 12);
-        const camera = graph.cameraPosition();
-        graph.cameraPosition(
-          {
-            x: camera.x * 0.25,
-            y: camera.y * 0.25,
-            z: camera.z * 0.25
-          },
-          { x: 0, y: 0, z: 0 },
-          duration
-        );
-      };
-      graph
-        .warmupTicks(70)
-        .cooldownTicks(150)
-        .graphData({ nodes, links })
-        .backgroundColor("rgba(5, 6, 18, 0.98)")
-        .showNavInfo(false)
-        .nodeId("id")
-        .nodeLabel((node) =>
-          `${escapeHtml(node.file.basename)}<br><span>${node.degree} 个连接</span>`
-        )
-        .nodeColor((node) => node.color)
-        .nodeVal((node) => node.val)
-        .nodeRelSize(3.2)
-        .nodeOpacity(0.92)
-        .nodeResolution(10)
-        .linkColor(() => "#a996ff")
-        .linkOpacity(0.46)
-        .linkWidth(0.72)
-        .linkDirectionalParticles(reduceMotion ? 0 : 1)
-        .linkDirectionalParticleColor(() => "#ff4f9a")
-        .linkDirectionalParticleWidth(1.15)
-        .linkDirectionalParticleSpeed(0.0036)
-        .onNodeClick((node) => {
-          void this.app.workspace.getLeaf(false).openFile(node.file);
-        })
-        .onEngineStop(() => focusGraph(650));
-
-      const stars = createGalaxyStars(900);
-      graph.scene().add(stars);
-      graph.cameraPosition({ z: 560 });
-
-      const resize = (): void => {
-        graph
-          .width(Math.max(300, body.clientWidth))
-          .height(Math.max(340, body.clientHeight));
-      };
-      const observer = new ResizeObserver(resize);
-      observer.observe(body);
-      resize();
-      const focusTimer = window.setTimeout(() => {
-        focusGraph(800);
-      }, 900);
-
-      let animationFrame = 0;
-      const animateStars = (): void => {
-        stars.rotation.y += 0.00045;
-        stars.rotation.x += 0.00008;
-        animationFrame = window.requestAnimationFrame(animateStars);
-      };
-      if (!reduceMotion) animateStars();
-
-      let disposed = false;
-      const dispose = (): void => {
-        if (disposed) return;
-        disposed = true;
-        observer.disconnect();
-        window.clearTimeout(focusTimer);
-        if (animationFrame) window.cancelAnimationFrame(animationFrame);
-        graph.scene().remove(stars);
-        stars.geometry.dispose();
-        stars.material.dispose();
-        graph._destructor();
-        body.remove();
-      };
-      this.galaxyGraphResource = { key: graphKey, body, dispose };
-    } catch {
-      body.empty();
-      this.renderGalaxyFallback(body, graphKey, nodes, links);
-    }
-  }
-
-  private renderGalaxyFallback(
-    body: HTMLElement,
-    graphKey: string,
-    nodes: GalaxyNode[],
-    links: GalaxyLink[]
-  ): void {
-    body.addClass("is-fallback");
-    const toolbar = body.createDiv("aurora-galaxy-fallback-toolbar");
-    toolbar.createSpan({ text: "2D 兼容图谱" });
-    const retry = toolbar.createEl("button", {
-      text: "重试 3D",
-      attr: { type: "button" }
-    });
-    const canvas = body.createEl("canvas", {
-      cls: "aurora-galaxy-fallback-canvas",
-      attr: {
-        role: "img",
-        "aria-label": "WebGL 不可用，当前显示可点击的二维知识图谱"
+    const draw = (time = performance.now()): void => {
+      points = drawGalaxyCanvas(
+        canvas,
+        scene,
+        camera,
+        reduceMotion ? 0 : time / 1000
+      );
+      lastFrame = time;
+    };
+    const scheduleAnimation = (): void => {
+      if (
+        disposed ||
+        reduceMotion ||
+        !visible ||
+        document.hidden ||
+        animationFrame !== 0
+      ) {
+        return;
+      }
+      animationFrame = window.requestAnimationFrame(animate);
+    };
+    const animate = (time: number): void => {
+      animationFrame = 0;
+      if (time - lastFrame >= 32) draw(time);
+      scheduleAnimation();
+    };
+    const resizeObserver = new ResizeObserver(() => draw());
+    resizeObserver.observe(body);
+    const intersectionObserver = new IntersectionObserver((entries) => {
+      visible = entries[0]?.isIntersecting ?? true;
+      if (visible) {
+        draw();
+        scheduleAnimation();
+      } else if (animationFrame !== 0) {
+        window.cancelAnimationFrame(animationFrame);
+        animationFrame = 0;
       }
     });
-    const tooltip = body.createDiv("aurora-galaxy-fallback-tooltip");
-    tooltip.hide();
-    let points: GalaxyCanvasPoint[] = [];
-    const draw = (): void => {
-      points = drawGalaxyFallback(canvas, nodes, links);
+    intersectionObserver.observe(body);
+    const handleVisibility = (): void => {
+      if (document.hidden) {
+        if (animationFrame !== 0) {
+          window.cancelAnimationFrame(animationFrame);
+          animationFrame = 0;
+        }
+      } else {
+        draw();
+        scheduleAnimation();
+      }
     };
-    const observer = new ResizeObserver(draw);
-    observer.observe(body);
+    document.addEventListener("visibilitychange", handleVisibility);
     draw();
+    scheduleAnimation();
 
-    const nearestNode = (event: MouseEvent): GalaxyCanvasPoint | null => {
+    const nearestNode = (
+      event: PointerEvent | MouseEvent
+    ): GalaxyCanvasPoint | null => {
       const rect = canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
       let nearest: GalaxyCanvasPoint | null = null;
-      let nearestDistance = 15;
-      points.forEach((point) => {
-        const distance = Math.hypot(point.x - x, point.y - y);
-        if (distance < nearestDistance) {
-          nearest = point;
-          nearestDistance = distance;
-        }
-      });
+      let nearestDistance = Number.POSITIVE_INFINITY;
+      points
+        .slice()
+        .sort((left, right) => left.depth - right.depth)
+        .forEach((point) => {
+          const distance = Math.hypot(point.x - x, point.y - y);
+          if (
+            distance <= Math.max(10, point.radius + 5) &&
+            distance < nearestDistance
+          ) {
+            nearest = point;
+            nearestDistance = distance;
+          }
+        });
       return nearest;
     };
-    const handleMove = (event: MouseEvent): void => {
+    let pointerId: number | null = null;
+    let pointerX = 0;
+    let pointerY = 0;
+    let dragDistance = 0;
+    const handlePointerDown = (event: PointerEvent): void => {
+      pointerId = event.pointerId;
+      pointerX = event.clientX;
+      pointerY = event.clientY;
+      dragDistance = 0;
+      canvas.setPointerCapture(event.pointerId);
+      canvas.addClass("is-dragging");
+    };
+    const handlePointerMove = (event: PointerEvent): void => {
+      if (pointerId === event.pointerId) {
+        const deltaX = event.clientX - pointerX;
+        const deltaY = event.clientY - pointerY;
+        pointerX = event.clientX;
+        pointerY = event.clientY;
+        dragDistance += Math.abs(deltaX) + Math.abs(deltaY);
+        camera.yaw += deltaX * 0.008;
+        camera.pitch = Math.max(
+          -Math.PI * 0.42,
+          Math.min(Math.PI * 0.42, camera.pitch + deltaY * 0.008)
+        );
+        draw();
+        tooltip.hide();
+        return;
+      }
       const point = nearestNode(event);
       canvas.toggleClass("is-node-hovered", point !== null);
       if (!point) {
@@ -714,32 +687,56 @@ export class AuroraDashboardView extends ItemView {
       });
       tooltip.show();
     };
-    const handleLeave = (): void => {
+    const finishPointer = (event: PointerEvent): void => {
+      if (pointerId !== event.pointerId) return;
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+      pointerId = null;
+      canvas.removeClass("is-dragging");
+    };
+    const handlePointerLeave = (): void => {
       canvas.removeClass("is-node-hovered");
       tooltip.hide();
     };
     const handleClick = (event: MouseEvent): void => {
+      if (dragDistance > 5) {
+        dragDistance = 0;
+        return;
+      }
       const point = nearestNode(event);
       if (point) void this.app.workspace.getLeaf(false).openFile(point.node.file);
     };
-    const handleRetry = (): void => {
-      this.disposeGalaxyGraph();
-      void this.refresh(true);
+    const handleWheel = (event: WheelEvent): void => {
+      event.preventDefault();
+      camera.zoom = Math.max(
+        0.72,
+        Math.min(2.5, camera.zoom * Math.exp(-event.deltaY * 0.0012))
+      );
+      draw();
     };
-    canvas.addEventListener("mousemove", handleMove);
-    canvas.addEventListener("mouseleave", handleLeave);
+    canvas.addEventListener("pointerdown", handlePointerDown);
+    canvas.addEventListener("pointermove", handlePointerMove);
+    canvas.addEventListener("pointerup", finishPointer);
+    canvas.addEventListener("pointercancel", finishPointer);
+    canvas.addEventListener("pointerleave", handlePointerLeave);
     canvas.addEventListener("click", handleClick);
-    retry.addEventListener("click", handleRetry);
+    canvas.addEventListener("wheel", handleWheel, { passive: false });
 
-    let disposed = false;
     const dispose = (): void => {
       if (disposed) return;
       disposed = true;
-      observer.disconnect();
-      canvas.removeEventListener("mousemove", handleMove);
-      canvas.removeEventListener("mouseleave", handleLeave);
+      resizeObserver.disconnect();
+      intersectionObserver.disconnect();
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      canvas.removeEventListener("pointerdown", handlePointerDown);
+      canvas.removeEventListener("pointermove", handlePointerMove);
+      canvas.removeEventListener("pointerup", finishPointer);
+      canvas.removeEventListener("pointercancel", finishPointer);
+      canvas.removeEventListener("pointerleave", handlePointerLeave);
       canvas.removeEventListener("click", handleClick);
-      retry.removeEventListener("click", handleRetry);
+      canvas.removeEventListener("wheel", handleWheel);
       body.remove();
     };
     this.galaxyGraphResource = { key: graphKey, body, dispose };
@@ -1189,23 +1186,54 @@ interface GalaxyGraphResource {
   dispose: () => void;
 }
 
-interface GalaxyNode extends NodeObject {
+interface GalaxyNode {
   id: string;
   file: TFile;
   degree: number;
   color: string;
-  val: number;
+  x?: number;
+  y?: number;
+  z?: number;
 }
 
-interface GalaxyLink extends LinkObject<GalaxyNode> {
-  source: string | GalaxyNode;
-  target: string | GalaxyNode;
+interface GalaxyLink {
+  source: string;
+  target: string;
+}
+
+interface ResolvedGalaxyLink {
+  source: GalaxyNode;
+  target: GalaxyNode;
+  phase: number;
+}
+
+interface GalaxyStar {
+  x: number;
+  y: number;
+  z: number;
+  size: number;
+  alpha: number;
+  color: string;
+}
+
+interface GalaxyScene {
+  nodes: GalaxyNode[];
+  links: ResolvedGalaxyLink[];
+  stars: GalaxyStar[];
+}
+
+interface GalaxyCamera {
+  yaw: number;
+  pitch: number;
+  zoom: number;
 }
 
 interface GalaxyCanvasPoint {
   node: GalaxyNode;
   x: number;
   y: number;
+  radius: number;
+  depth: number;
 }
 
 interface ChartPoint {
@@ -1230,78 +1258,274 @@ function knowledgeGraphKey(snapshot: KnowledgeGraphSnapshot): string {
   return `${snapshot.nodes.length}:${snapshot.edges.length}:${hash >>> 0}`;
 }
 
-function drawGalaxyFallback(
-  canvas: HTMLCanvasElement,
+function createGalaxyScene(
   nodes: GalaxyNode[],
   links: GalaxyLink[]
+): GalaxyScene {
+  const maxDegree = Math.max(1, ...nodes.map((node) => node.degree));
+  nodes.forEach((node) => {
+    const random = seededRandom(stableHash(node.id));
+    const theta = random() * Math.PI * 2;
+    const phi = Math.acos(2 * random() - 1);
+    const degreeWeight = Math.sqrt(node.degree / maxDegree);
+    const radius = 34 + (1 - degreeWeight) * 145 + random() * 34;
+    node.x = radius * Math.sin(phi) * Math.cos(theta);
+    node.y = radius * Math.cos(phi) * 0.86;
+    node.z = radius * Math.sin(phi) * Math.sin(theta);
+  });
+
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const resolvedLinks = links.flatMap((link, index): ResolvedGalaxyLink[] => {
+    const source = nodeById.get(link.source);
+    const target = nodeById.get(link.target);
+    if (!source || !target) return [];
+    return [{ source, target, phase: (index * 0.61803398875) % 1 }];
+  });
+
+  relaxGalaxyLayout(nodes, resolvedLinks);
+  const random = seededRandom(0x51f15e);
+  const starColors = ["#f8f5ff", "#ff63a7", "#a884ff", "#66d9ff"];
+  const stars = Array.from({ length: 190 }, (): GalaxyStar => {
+    const radius = 235 + random() * 330;
+    const theta = random() * Math.PI * 2;
+    const phi = Math.acos(2 * random() - 1);
+    return {
+      x: radius * Math.sin(phi) * Math.cos(theta),
+      y: radius * Math.cos(phi),
+      z: radius * Math.sin(phi) * Math.sin(theta),
+      size: 0.45 + random() * 1.15,
+      alpha: 0.18 + random() * 0.5,
+      color: starColors[Math.floor(random() * starColors.length)]!
+    };
+  });
+  return { nodes, links: resolvedLinks, stars };
+}
+
+function relaxGalaxyLayout(
+  nodes: GalaxyNode[],
+  links: ResolvedGalaxyLink[]
+): void {
+  const forceX = new Float32Array(nodes.length);
+  const forceY = new Float32Array(nodes.length);
+  const forceZ = new Float32Array(nodes.length);
+  const nodeIndex = new Map(nodes.map((node, index) => [node, index]));
+  for (let iteration = 0; iteration < 36; iteration += 1) {
+    forceX.fill(0);
+    forceY.fill(0);
+    forceZ.fill(0);
+    for (let left = 0; left < nodes.length; left += 1) {
+      const a = nodes[left]!;
+      const ax = a.x ?? 0;
+      const ay = a.y ?? 0;
+      const az = a.z ?? 0;
+      forceX[left] = (forceX[left] ?? 0) - ax * 0.0018;
+      forceY[left] = (forceY[left] ?? 0) - ay * 0.0018;
+      forceZ[left] = (forceZ[left] ?? 0) - az * 0.0018;
+      for (let right = left + 1; right < nodes.length; right += 1) {
+        const b = nodes[right]!;
+        const dx = ax - (b.x ?? 0);
+        const dy = ay - (b.y ?? 0);
+        const dz = az - (b.z ?? 0);
+        const distanceSquared = dx * dx + dy * dy + dz * dz + 36;
+        const strength = 68 / distanceSquared;
+        forceX[left] = (forceX[left] ?? 0) + dx * strength;
+        forceY[left] = (forceY[left] ?? 0) + dy * strength;
+        forceZ[left] = (forceZ[left] ?? 0) + dz * strength;
+        forceX[right] = (forceX[right] ?? 0) - dx * strength;
+        forceY[right] = (forceY[right] ?? 0) - dy * strength;
+        forceZ[right] = (forceZ[right] ?? 0) - dz * strength;
+      }
+    }
+    links.forEach((link) => {
+      const sourceIndex = nodeIndex.get(link.source);
+      const targetIndex = nodeIndex.get(link.target);
+      if (sourceIndex === undefined || targetIndex === undefined) return;
+      const dx = (link.target.x ?? 0) - (link.source.x ?? 0);
+      const dy = (link.target.y ?? 0) - (link.source.y ?? 0);
+      const dz = (link.target.z ?? 0) - (link.source.z ?? 0);
+      const distance = Math.max(1, Math.hypot(dx, dy, dz));
+      const spring = (distance - 48) * 0.0065;
+      const fx = (dx / distance) * spring;
+      const fy = (dy / distance) * spring;
+      const fz = (dz / distance) * spring;
+      forceX[sourceIndex] = (forceX[sourceIndex] ?? 0) + fx;
+      forceY[sourceIndex] = (forceY[sourceIndex] ?? 0) + fy;
+      forceZ[sourceIndex] = (forceZ[sourceIndex] ?? 0) + fz;
+      forceX[targetIndex] = (forceX[targetIndex] ?? 0) - fx;
+      forceY[targetIndex] = (forceY[targetIndex] ?? 0) - fy;
+      forceZ[targetIndex] = (forceZ[targetIndex] ?? 0) - fz;
+    });
+    const step = 0.82 - iteration * 0.012;
+    nodes.forEach((node, index) => {
+      node.x = (node.x ?? 0) + forceX[index]! * step;
+      node.y = (node.y ?? 0) + forceY[index]! * step;
+      node.z = (node.z ?? 0) + forceZ[index]! * step;
+    });
+  }
+
+  const positionedNodes = nodes.filter((node) => node.degree > 0);
+  const layoutNodes = positionedNodes.length > 0 ? positionedNodes : nodes;
+  if (layoutNodes.length === 0) return;
+  const center = layoutNodes.reduce(
+    (sum, node) => ({
+      x: sum.x + (node.x ?? 0),
+      y: sum.y + (node.y ?? 0),
+      z: sum.z + (node.z ?? 0)
+    }),
+    { x: 0, y: 0, z: 0 }
+  );
+  center.x /= layoutNodes.length;
+  center.y /= layoutNodes.length;
+  center.z /= layoutNodes.length;
+  nodes.forEach((node) => {
+    node.x = (node.x ?? 0) - center.x;
+    node.y = (node.y ?? 0) - center.y;
+    node.z = (node.z ?? 0) - center.z;
+  });
+  const radii = layoutNodes
+    .map((node) => Math.hypot(node.x ?? 0, node.y ?? 0, node.z ?? 0))
+    .sort((left, right) => left - right);
+  const percentileRadius =
+    radii[Math.min(radii.length - 1, Math.floor(radii.length * 0.94))] ?? 1;
+  const scale = 150 / Math.max(1, percentileRadius);
+  nodes.forEach((node) => {
+    let x = (node.x ?? 0) * scale;
+    let y = (node.y ?? 0) * scale;
+    let z = (node.z ?? 0) * scale;
+    const radius = Math.hypot(x, y, z);
+    if (radius > 205) {
+      const clamp = 205 / radius;
+      x *= clamp;
+      y *= clamp;
+      z *= clamp;
+    }
+    node.x = x;
+    node.y = y;
+    node.z = z;
+  });
+}
+
+function drawGalaxyCanvas(
+  canvas: HTMLCanvasElement,
+  scene: GalaxyScene,
+  camera: GalaxyCamera,
+  time: number
 ): GalaxyCanvasPoint[] {
   const rect = canvas.getBoundingClientRect();
   const width = Math.max(300, rect.width);
   const height = Math.max(340, rect.height);
-  const ratio = window.devicePixelRatio || 1;
-  canvas.width = Math.round(width * ratio);
-  canvas.height = Math.round(height * ratio);
+  const ratio = Math.min(2, window.devicePixelRatio || 1);
+  const pixelWidth = Math.round(width * ratio);
+  const pixelHeight = Math.round(height * ratio);
+  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+  }
   const context = canvas.getContext("2d");
   if (!context) return [];
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
   context.clearRect(0, 0, width, height);
-  context.fillStyle = "#050612";
+  const background = context.createRadialGradient(
+    width * 0.48,
+    height * 0.46,
+    0,
+    width * 0.5,
+    height * 0.5,
+    Math.max(width, height) * 0.72
+  );
+  background.addColorStop(0, "#10112d");
+  background.addColorStop(0.48, "#08091a");
+  background.addColorStop(1, "#03040d");
+  context.fillStyle = background;
   context.fillRect(0, 0, width, height);
 
-  let starSeed = 0x7a11ce;
-  const random = (): number => {
-    starSeed = (Math.imul(starSeed, 1664525) + 1013904223) >>> 0;
-    return starSeed / 0x100000000;
+  const yaw = camera.yaw + time * 0.035;
+  const project = (x: number, y: number, z: number): ProjectedPoint => {
+    const cosYaw = Math.cos(yaw);
+    const sinYaw = Math.sin(yaw);
+    const cosPitch = Math.cos(camera.pitch);
+    const sinPitch = Math.sin(camera.pitch);
+    const rotatedX = x * cosYaw + z * sinYaw;
+    const yawZ = -x * sinYaw + z * cosYaw;
+    const rotatedY = y * cosPitch - yawZ * sinPitch;
+    const rotatedZ = y * sinPitch + yawZ * cosPitch;
+    const perspective = 430 / Math.max(150, 430 + rotatedZ);
+    const scale = (Math.min(width, height) / 410) * camera.zoom * perspective;
+    return {
+      x: width / 2 + rotatedX * scale,
+      y: height / 2 + rotatedY * scale,
+      depth: rotatedZ,
+      scale
+    };
   };
-  for (let index = 0; index < 120; index += 1) {
-    context.globalAlpha = 0.12 + random() * 0.38;
-    context.fillStyle = index % 3 === 0 ? "#ff63a7" : "#8fbcff";
+
+  scene.stars.forEach((star) => {
+    const point = project(star.x, star.y, star.z);
+    if (point.x < 0 || point.x > width || point.y < 0 || point.y > height) return;
+    context.globalAlpha = star.alpha * Math.max(0.35, point.scale);
+    context.fillStyle = star.color;
     context.beginPath();
-    context.arc(random() * width, random() * height, 0.35 + random(), 0, Math.PI * 2);
+    context.arc(point.x, point.y, star.size * Math.max(0.5, point.scale), 0, Math.PI * 2);
     context.fill();
-  }
+  });
   context.globalAlpha = 1;
 
-  const maxDegree = Math.max(1, ...nodes.map((node) => node.degree));
-  const points = nodes.map((node): GalaxyCanvasPoint => {
-    const hash = stableHash(node.id);
-    const angle = ((hash % 3600) / 3600) * Math.PI * 2;
-    const degreeWeight = Math.sqrt(node.degree / maxDegree);
-    const radius = 0.1 + (1 - degreeWeight) * 0.82;
-    const jitter = (((hash >>> 8) % 1000) / 1000 - 0.5) * 0.08;
+  const points = scene.nodes.map((node): GalaxyCanvasPoint => {
+    const projected = project(node.x ?? 0, node.y ?? 0, node.z ?? 0);
     return {
       node,
-      x: width / 2 + Math.cos(angle) * width * 0.44 * (radius + jitter),
-      y: height / 2 + Math.sin(angle) * height * 0.4 * (radius + jitter)
+      x: projected.x,
+      y: projected.y,
+      radius:
+        (1.65 + Math.min(4.6, Math.log2(node.degree + 2))) *
+        Math.max(0.58, projected.scale),
+      depth: projected.depth
     };
   });
   const pointById = new Map(points.map((point) => [point.node.id, point]));
-  const endpointId = (endpoint: string | GalaxyNode): string =>
-    typeof endpoint === "string" ? endpoint : endpoint.id;
 
-  context.strokeStyle = "rgba(169, 150, 255, 0.28)";
-  context.lineWidth = 0.65;
-  links.forEach((link) => {
-    const source = pointById.get(endpointId(link.source));
-    const target = pointById.get(endpointId(link.target));
+  scene.links.forEach((link) => {
+    const source = pointById.get(link.source.id);
+    const target = pointById.get(link.target.id);
     if (!source || !target) return;
+    const depthFactor = Math.max(
+      0.28,
+      Math.min(1, 0.72 - (source.depth + target.depth) / 900)
+    );
+    context.strokeStyle = `rgba(174, 151, 255, ${0.2 + depthFactor * 0.34})`;
+    context.lineWidth = 0.55 + depthFactor * 0.7;
     context.beginPath();
     context.moveTo(source.x, source.y);
     context.lineTo(target.x, target.y);
     context.stroke();
   });
 
+  const particleStride = Math.max(1, Math.ceil(scene.links.length / 180));
+  scene.links.forEach((link, index) => {
+    if (index % particleStride !== 0) return;
+    const progress = (time * 0.09 + link.phase) % 1;
+    const point = project(
+      (link.source.x ?? 0) + ((link.target.x ?? 0) - (link.source.x ?? 0)) * progress,
+      (link.source.y ?? 0) + ((link.target.y ?? 0) - (link.source.y ?? 0)) * progress,
+      (link.source.z ?? 0) + ((link.target.z ?? 0) - (link.source.z ?? 0)) * progress
+    );
+    context.globalAlpha = 0.72;
+    context.fillStyle = "#ff5aa6";
+    context.beginPath();
+    context.arc(point.x, point.y, Math.max(0.7, point.scale * 1.15), 0, Math.PI * 2);
+    context.fill();
+  });
+
   points
     .slice()
-    .sort((left, right) => left.node.degree - right.node.degree)
+    .sort((left, right) => right.depth - left.depth)
     .forEach((point) => {
-      const radius = 1.7 + Math.min(4.8, Math.log2(point.node.degree + 2));
       context.shadowColor = point.node.color;
-      context.shadowBlur = 7;
+      context.shadowBlur = 5 + point.radius;
       context.fillStyle = point.node.color;
-      context.globalAlpha = 0.86;
+      context.globalAlpha = Math.max(0.52, Math.min(0.96, 0.78 - point.depth / 900));
       context.beginPath();
-      context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      context.arc(point.x, point.y, point.radius, 0, Math.PI * 2);
       context.fill();
     });
   context.shadowBlur = 0;
@@ -1309,43 +1533,19 @@ function drawGalaxyFallback(
   return points;
 }
 
-function createGalaxyStars(
-  count: number
-): Points<BufferGeometry, PointsMaterial> {
-  const positions: number[] = [];
-  const colors: number[] = [];
-  const palette = ["#f8f5ff", "#ff63a7", "#a884ff", "#66d9ff"];
-  let seed = 0x51f15e;
-  const random = (): number => {
-    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-    return seed / 0x100000000;
+interface ProjectedPoint {
+  x: number;
+  y: number;
+  depth: number;
+  scale: number;
+}
+
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 0x100000000;
   };
-
-  for (let index = 0; index < count; index += 1) {
-    const radius = 250 + random() * 850;
-    const theta = random() * Math.PI * 2;
-    const phi = Math.acos(2 * random() - 1);
-    positions.push(
-      radius * Math.sin(phi) * Math.cos(theta),
-      radius * Math.sin(phi) * Math.sin(theta),
-      radius * Math.cos(phi)
-    );
-    const color = new Color(palette[Math.floor(random() * palette.length)]);
-    colors.push(color.r, color.g, color.b);
-  }
-
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
-  const material = new PointsMaterial({
-    size: 1.65,
-    transparent: true,
-    opacity: 0.78,
-    vertexColors: true,
-    blending: AdditiveBlending,
-    depthWrite: false
-  });
-  return new Points(geometry, material);
 }
 
 function galaxyColor(path: string): string {
@@ -1360,15 +1560,6 @@ function stableHash(value: string): number {
     hash = Math.imul(hash, 16777619);
   }
   return Math.abs(hash);
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/gu, "&amp;")
-    .replace(/</gu, "&lt;")
-    .replace(/>/gu, "&gt;")
-    .replace(/"/gu, "&quot;")
-    .replace(/'/gu, "&#039;");
 }
 
 function drawTrendChart(
