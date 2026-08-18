@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.3
+
+- Restore pre-install writing history across the full 365-day view by estimating from each note's creation date instead of its last-modified date.
+- Estimate cumulative historical links from source-note creation dates, preventing synced or bulk-edited vaults from collapsing their history into the latest month.
+- Keep exact daily activity and link snapshots recorded after Dashboard tracking began.
+
+## 0.3.2
+
+- Replace the Dashboard graph's WebGL renderer with an isolated Canvas 2D perspective renderer while preserving 3D rotation, zoom, depth, particles, and clickable notes.
+- Prevent Dashboard from competing with or disrupting Obsidian's built-in graph renderer.
+- Add a regression test that prevents WebGL, Three.js, and `3d-force-graph` from returning.
+
 ## 0.3.1
 
 - Reuse the existing 3D knowledge-graph renderer while its topology is unchanged, preventing repeated Dashboard scans from exhausting WebGL contexts.

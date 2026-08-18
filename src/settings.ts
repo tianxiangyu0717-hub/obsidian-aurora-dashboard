@@ -100,7 +100,7 @@ export class AuroraSettingTab extends PluginSettingTab {
       },
       {
         name: "显示估算历史",
-        desc: "安装前无法精确还原每日输入量；开启后会按文件当前字数和最后修改日期估算。",
+        desc: "安装前无法精确还原每日输入量；开启后会按文件当前字数和创建日期估算。",
         control: {
           type: "toggle",
           key: "showEstimatedHistory",
@@ -311,7 +311,7 @@ function renderSettings(
   new Setting(container)
     .setName("显示估算历史")
     .setDesc(
-      "安装前无法精确还原每日输入量；开启后会按文件当前字数和最后修改日期估算。"
+      "安装前无法精确还原每日输入量；开启后会按文件当前字数和创建日期估算。"
     )
     .addToggle((toggle) =>
       toggle

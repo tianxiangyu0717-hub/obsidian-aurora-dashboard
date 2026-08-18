@@ -5,6 +5,7 @@ import {
   countWords,
   dayKeysEndingToday,
   extractOpenTasks,
+  historicalDateKey,
   localDateKey,
   normalizeTodoFilePath
 } from "./core";
@@ -249,12 +250,15 @@ export class StatsService {
     const trackingStart = this.store.data.trackingStartedAt
       ? localDateKey(this.store.data.trackingStartedAt)
       : localDateKey(new Date());
-    const notesByMtime = new Map<string, NoteMetric[]>();
+    const notesByHistoricalDate = new Map<string, NoteMetric[]>();
     notes.forEach((note) => {
-      const key = localDateKey(note.file.stat.mtime);
-      const list = notesByMtime.get(key) ?? [];
+      const key = historicalDateKey(
+        note.file.stat.ctime,
+        note.file.stat.mtime
+      );
+      const list = notesByHistoricalDate.get(key) ?? [];
       list.push(note);
-      notesByMtime.set(key, list);
+      notesByHistoricalDate.set(key, list);
     });
 
     return keys.map((date) => {
@@ -262,7 +266,7 @@ export class StatsService {
       const isBeforeTracking = date < trackingStart;
       const estimatedNotes =
         this.store.data.settings.showEstimatedHistory && isBeforeTracking
-          ? notesByMtime.get(date) ?? []
+          ? notesByHistoricalDate.get(date) ?? []
           : [];
       const exactFiles = (exact?.paths ?? [])
         .map((path) => this.app.vault.getAbstractFileByPath(path))
@@ -339,7 +343,9 @@ export class StatsService {
     );
     const estimatedLinkDates = graph.edges.map((edge) => {
       const source = notesByPath.get(edge.source);
-      return localDateKey(source?.file.stat.mtime ?? Date.now());
+      return source
+        ? historicalDateKey(source.file.stat.ctime, source.file.stat.mtime)
+        : localDateKey(Date.now());
     });
     return buildCumulativeLinkHistory(
       dayKeysEndingToday(365),

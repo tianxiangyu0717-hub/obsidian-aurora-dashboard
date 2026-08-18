@@ -87,6 +87,16 @@ export function localDateKey(value: Date | number): string {
   return `${year}-${month}-${day}`;
 }
 
+export function historicalDateKey(
+  ctime: number,
+  mtime: number,
+  now = Date.now()
+): string {
+  const hasUsableCreationTime =
+    Number.isFinite(ctime) && ctime > 0 && ctime <= now;
+  return localDateKey(hasUsableCreationTime ? ctime : mtime);
+}
+
 export function dayKeysEndingToday(days: number, now = new Date()): string[] {
   const safeDays = Math.max(1, Math.floor(days));
   const cursor = new Date(now.getFullYear(), now.getMonth(), now.getDate());

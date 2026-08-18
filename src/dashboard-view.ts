@@ -886,7 +886,7 @@ export class AuroraDashboardView extends ItemView {
       if (day.estimated) {
         tooltip.createSpan({
           cls: "aurora-chart-tooltip-source",
-          text: "按源笔记修改日期估算"
+          text: "按源笔记创建日期估算"
         });
       }
       tooltip.setCssProps({
@@ -900,7 +900,7 @@ export class AuroraDashboardView extends ItemView {
     chartWrap.createDiv({
       cls: "aurora-link-chart-note",
       text: history.some((day) => day.estimated)
-        ? "历史按源笔记最后修改日期估算"
+        ? "历史按源笔记创建日期估算"
         : "每日精确快照"
     });
   }

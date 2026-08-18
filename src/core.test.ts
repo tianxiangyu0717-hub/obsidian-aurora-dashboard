@@ -6,6 +6,7 @@ import {
   dayKeysEndingToday,
   extractOpenTasks,
   formatCompactNumber,
+  historicalDateKey,
   localDateKey,
   normalizeTodoFilePath,
   updateMarkdownTask
@@ -84,6 +85,26 @@ describe("date and presentation helpers", () => {
 
   it("formats local dates", () => {
     expect(localDateKey(new Date(2026, 0, 2))).toBe("2026-01-02");
+  });
+
+  it("uses creation time for historical estimates when notes were edited later", () => {
+    expect(
+      historicalDateKey(
+        new Date(2026, 2, 15).getTime(),
+        new Date(2026, 7, 12).getTime(),
+        new Date(2026, 7, 18).getTime()
+      )
+    ).toBe("2026-03-15");
+  });
+
+  it("falls back to modification time when creation time is unavailable", () => {
+    expect(
+      historicalDateKey(
+        0,
+        new Date(2026, 6, 9).getTime(),
+        new Date(2026, 7, 18).getTime()
+      )
+    ).toBe("2026-07-09");
   });
 
   it("maps values to stable activity levels", () => {

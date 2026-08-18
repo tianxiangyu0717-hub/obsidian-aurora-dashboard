@@ -15,7 +15,7 @@ All analysis runs locally inside Obsidian.
 - Notes with no resolved backlinks.
 - Empty or very short notes, with a configurable word threshold.
 - An editable Todo list sourced only from one explicitly configured Markdown file. It is empty by default.
-- An animated 3D galaxy knowledge graph powered by Three.js/WebGL, with orbit controls, moving link particles, tooltips, and clickable notes.
+- An animated perspective-projected 3D galaxy knowledge graph rendered on an isolated 2D canvas, with orbit controls, moving link particles, tooltips, and clickable notes.
 - A horizontally scrollable, manually ordered list of installed plugin shortcuts.
 - A 365-day writing activity heatmap.
 - An interactive 365-day cumulative resolved-link line-area chart.
@@ -37,11 +37,11 @@ choose whether it replaces the active tab or opens in a new tab.
 | Empty or very short | Notes whose readable word count is at or below the configured threshold. The default is 10. |
 | Open tasks | Unchecked Markdown task items matching `- [ ]` in the configured Todo file only. No task file is read until a path is configured. |
 | Added words | Positive word-count deltas observed after the plugin starts tracking. Deletions do not reduce a day's total. |
-| Cumulative links | Current resolved metadata-cache links, recorded as an exact daily snapshot after tracking starts. Earlier dates are estimated from each source note's last-modified date. |
+| Cumulative links | Current resolved metadata-cache links, recorded as an exact daily snapshot after tracking starts. Earlier dates are estimated from each source note's creation date. |
 
 Obsidian files do not contain an exact historical “words added per day” ledger.
 For dates before installation, Dashboard can estimate activity by
-grouping each note's current word count under its last-modified date. Estimated
+grouping each note's current word count under its creation date. Estimated
 cells use a subtle opacity difference and can be disabled in settings.
 
 ## Privacy and safety
@@ -79,10 +79,9 @@ The shortcut strip reads installed plugin manifests from the current vault.
 Use its manage button to reorder, remove, or add entries. Selecting a shortcut
 opens that plugin's Obsidian detail page through the official `show-plugin` URI.
 
-The 3D graph renderer uses the MIT-licensed
-[`3d-force-graph`](https://github.com/vasturiano/3d-force-graph) project and
-Three.js. Reduced-motion system preferences disable continuous star and link
-particle animation.
+The knowledge graph uses an isolated Canvas 2D perspective renderer so it does
+not compete with Obsidian's built-in graph for a WebGL context. Reduced-motion
+system preferences disable continuous star and link particle animation.
 
 ## Settings
 
