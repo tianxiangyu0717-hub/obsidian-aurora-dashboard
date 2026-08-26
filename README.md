@@ -12,7 +12,7 @@ All analysis runs locally inside Obsidian.
 ## What it shows
 
 - Total Markdown notes and total readable word count.
-- Notes with no resolved backlinks.
+- Isolated notes with neither outgoing note links nor resolved backlinks.
 - Empty or very short notes, with a configurable word threshold.
 - An editable Todo list sourced only from one explicitly configured Markdown file. It is empty by default.
 - An animated perspective-projected 3D galaxy knowledge graph rendered on an isolated 2D canvas, with orbit controls, moving link particles, tooltips, and clickable notes.
@@ -33,7 +33,7 @@ choose whether it replaces the active tab or opens in a new tab.
 | --- | --- |
 | Notes | Included `.md` files in the current vault. |
 | Total words | Readable CJK characters plus non-CJK word groups after common Markdown syntax, frontmatter, code fences, and comments are removed. |
-| No backlinks | Included notes that are not targeted by any resolved link in Obsidian's metadata cache. |
+| Isolated notes | Included notes that contain no outgoing note links and are not targeted by any resolved link in Obsidian's metadata cache. |
 | Empty or very short | Notes whose readable word count is at or below the configured threshold. The default is 10. |
 | Open tasks | Unchecked Markdown task items matching `- [ ]` in the configured Todo file only. No task file is read until a path is configured. |
 | Added words | Positive word-count deltas observed after the plugin starts tracking. Deletions do not reduce a day's total. |

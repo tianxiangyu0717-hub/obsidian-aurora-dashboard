@@ -1,4 +1,10 @@
-import type { DailyLinkCount, OpenTask } from "./models";
+import type { DailyLinkCount, NoteMetric, OpenTask } from "./models";
+
+export function isIsolatedNote(
+  note: Pick<NoteMetric, "backlinks" | "outgoingLinks">
+): boolean {
+  return note.backlinks === 0 && note.outgoingLinks === 0;
+}
 
 export function normalizeTodoFilePath(value: string): string {
   const path = value

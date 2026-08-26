@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.4
+
+- Redefine the connection-health metric as isolated notes with neither outgoing note links nor backlinks.
+- Rename the Dashboard metric and maintenance row to clearly identify isolated notes.
+
 ## 0.3.3
 
 - Restore pre-install writing history across the full 365-day view by estimating from each note's creation date instead of its last-modified date.

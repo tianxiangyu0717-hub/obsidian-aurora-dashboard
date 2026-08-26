@@ -7,6 +7,7 @@ import {
   extractOpenTasks,
   formatCompactNumber,
   historicalDateKey,
+  isIsolatedNote,
   localDateKey,
   normalizeTodoFilePath,
   updateMarkdownTask
@@ -71,6 +72,15 @@ describe("normalizeTodoFilePath", () => {
     );
     expect(normalizeTodoFilePath("工作\\Todo.md")).toBe("工作/Todo.md");
     expect(normalizeTodoFilePath("  ")).toBe("");
+  });
+});
+
+describe("isIsolatedNote", () => {
+  it("matches only notes with neither outgoing links nor backlinks", () => {
+    expect(isIsolatedNote({ backlinks: 0, outgoingLinks: 0 })).toBe(true);
+    expect(isIsolatedNote({ backlinks: 1, outgoingLinks: 0 })).toBe(false);
+    expect(isIsolatedNote({ backlinks: 0, outgoingLinks: 1 })).toBe(false);
+    expect(isIsolatedNote({ backlinks: 1, outgoingLinks: 1 })).toBe(false);
   });
 });
 

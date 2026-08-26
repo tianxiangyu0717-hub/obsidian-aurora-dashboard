@@ -92,7 +92,7 @@ export interface DashboardSnapshot {
   notes: NoteMetric[];
   noteCount: number;
   totalWords: number;
-  unlinkedNotes: NoteMetric[];
+  isolatedNotes: NoteMetric[];
   shortNotes: NoteMetric[];
   taskNotes: NoteMetric[];
   recentNotes: NoteMetric[];

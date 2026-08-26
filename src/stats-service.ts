@@ -6,6 +6,7 @@ import {
   dayKeysEndingToday,
   extractOpenTasks,
   historicalDateKey,
+  isIsolatedNote,
   localDateKey,
   normalizeTodoFilePath
 } from "./core";
@@ -135,8 +136,8 @@ export class StatsService {
     this.initializeTrackingBaseline(notes);
 
     const totalWords = notes.reduce((sum, note) => sum + note.words, 0);
-    const unlinkedNotes = notes
-      .filter((note) => note.backlinks === 0)
+    const isolatedNotes = notes
+      .filter(isIsolatedNote)
       .sort(compareByModifiedAscending);
     const shortNotes = notes
       .filter(
@@ -163,7 +164,7 @@ export class StatsService {
       notes,
       noteCount: notes.length,
       totalWords,
-      unlinkedNotes,
+      isolatedNotes,
       shortNotes,
       taskNotes,
       recentNotes,

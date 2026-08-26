@@ -332,15 +332,15 @@ export class AuroraDashboardView extends ItemView {
     this.createMetricCard(
       metrics,
       "link",
-      formatCompactNumber(snapshot.unlinkedNotes.length),
-      "待连接",
+      formatCompactNumber(snapshot.isolatedNotes.length),
+      "孤立笔记",
       "accent-yellow",
       () =>
         this.openDetails(
-          "无反向链接笔记",
-          "这些笔记尚未被其他笔记引用",
-          snapshot.unlinkedNotes.map((note) =>
-            noteDetail(note, `${note.outgoingLinks} 个出链`)
+          "孤立笔记",
+          "这些笔记既没有出链，也没有被其他笔记引用",
+          snapshot.isolatedNotes.map((note) =>
+            noteDetail(note, "无出链 · 无反向链接")
           )
         )
     );
@@ -815,14 +815,14 @@ export class AuroraDashboardView extends ItemView {
     this.createIssueRow(
       list,
       "unlink",
-      "无反向链接笔记",
-      snapshot.unlinkedNotes.length,
+      "孤立笔记",
+      snapshot.isolatedNotes.length,
       () =>
         this.openDetails(
-          "无反向链接笔记",
-          "这些笔记尚未被其他笔记引用",
-          snapshot.unlinkedNotes.map((note) =>
-            noteDetail(note, `${note.outgoingLinks} 个出链`)
+          "孤立笔记",
+          "这些笔记既没有出链，也没有被其他笔记引用",
+          snapshot.isolatedNotes.map((note) =>
+            noteDetail(note, "无出链 · 无反向链接")
           )
         )
     );
