@@ -10,6 +10,7 @@ import {
   isIsolatedNote,
   localDateKey,
   normalizeTodoFilePath,
+  recoverTodoFilePath,
   updateMarkdownTask
 } from "./core";
 
@@ -72,6 +73,24 @@ describe("normalizeTodoFilePath", () => {
     );
     expect(normalizeTodoFilePath("工作\\Todo.md")).toBe("工作/Todo.md");
     expect(normalizeTodoFilePath("  ")).toBe("");
+  });
+
+  it("recovers a missing setting from its independent backup", () => {
+    expect(
+      recoverTodoFilePath("", "临时收件箱\\Todo", ["旧路径/Todo.md"])
+    ).toBe("临时收件箱/Todo.md");
+  });
+
+  it("keeps the primary setting when backup files disagree", () => {
+    expect(
+      recoverTodoFilePath("当前/Todo.md", "备份/Todo.md", ["冲突/Todo.md"])
+    ).toBe("当前/Todo.md");
+  });
+
+  it("falls back to an iCloud conflict copy when no backup exists", () => {
+    expect(recoverTodoFilePath(undefined, undefined, ["", "工作/Todo"])).toBe(
+      "工作/Todo.md"
+    );
   });
 });
 

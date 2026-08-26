@@ -1,6 +1,10 @@
 import { Notice, Plugin, TFile, normalizePath } from "obsidian";
 import type { PluginManifest } from "obsidian";
-import { updateMarkdownTask } from "./core";
+import {
+  normalizeTodoFilePath,
+  recoverTodoFilePath,
+  updateMarkdownTask
+} from "./core";
 import {
   AuroraDashboardView,
   VIEW_TYPE_AURORA_DASHBOARD
@@ -105,6 +109,7 @@ export default class AuroraDashboardPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     this.stats.invalidate();
+    await this.saveTodoPathBackup();
     await this.saveData(this.data);
     this.refreshDashboardViews(true);
   }
@@ -175,12 +180,21 @@ export default class AuroraDashboardPlugin extends Plugin {
 
   private async loadPluginData(): Promise<void> {
     const saved = (await this.loadData()) as Partial<AuroraPluginData> | null;
+    const backupPath = await this.loadTodoPathBackup();
+    const conflictPaths =
+      backupPath === null ? await this.loadConflictTodoPaths() : [];
+    const todoFilePath = recoverTodoFilePath(
+      saved?.settings?.todoFilePath,
+      backupPath,
+      conflictPaths
+    );
     this.data = {
       ...structuredClone(DEFAULT_DATA),
       ...saved,
       settings: {
         ...DEFAULT_SETTINGS,
-        ...(saved?.settings ?? {})
+        ...(saved?.settings ?? {}),
+        todoFilePath
       },
       activity: saved?.activity ?? {},
       linkSnapshots: saved?.linkSnapshots ?? {},
@@ -188,6 +202,72 @@ export default class AuroraDashboardPlugin extends Plugin {
       trackingStartedAt: saved?.trackingStartedAt ?? null,
       linkTrackingStartedAt: saved?.linkTrackingStartedAt ?? null
     };
+    await this.saveTodoPathBackup();
+    if (todoFilePath && !saved?.settings?.todoFilePath) {
+      await this.saveData(this.data);
+    }
+  }
+
+  private get pluginDataDir(): string {
+    return normalizePath(
+      `${this.app.vault.configDir}/plugins/${this.manifest.id}`
+    );
+  }
+
+  private get todoPathBackupFile(): string {
+    return normalizePath(`${this.pluginDataDir}/todo-path-backup.json`);
+  }
+
+  private async saveTodoPathBackup(): Promise<void> {
+    const payload = {
+      version: 1,
+      todoFilePath: normalizeTodoFilePath(this.data.settings.todoFilePath)
+    };
+    try {
+      await this.app.vault.adapter.write(
+        this.todoPathBackupFile,
+        `${JSON.stringify(payload, null, 2)}\n`
+      );
+    } catch {
+      // The primary Obsidian data file remains the source of truth.
+    }
+  }
+
+  private async loadTodoPathBackup(): Promise<string | null> {
+    try {
+      if (!(await this.app.vault.adapter.exists(this.todoPathBackupFile))) {
+        return null;
+      }
+      const parsed: unknown = JSON.parse(
+        await this.app.vault.adapter.read(this.todoPathBackupFile)
+      );
+      return readTodoPath(parsed);
+    } catch {
+      return null;
+    }
+  }
+
+  private async loadConflictTodoPaths(): Promise<unknown[]> {
+    try {
+      const { files } = await this.app.vault.adapter.list(this.pluginDataDir);
+      const conflictFiles = files.filter((path) =>
+        /\/data(?: \d+)?\.json$/u.test(path) && !path.endsWith("/data.json")
+      );
+      return await Promise.all(
+        conflictFiles.map(async (path) => {
+          try {
+            const parsed: unknown = JSON.parse(
+              await this.app.vault.adapter.read(path)
+            );
+            return readTodoPath(parsed);
+          } catch {
+            return "";
+          }
+        })
+      );
+    } catch {
+      return [];
+    }
   }
 
   private registerVaultEvents(): void {
@@ -234,6 +314,16 @@ export default class AuroraDashboardPlugin extends Plugin {
       })
     );
   }
+}
+
+function readTodoPath(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  if (typeof record.todoFilePath === "string") return record.todoFilePath;
+  const settings = record.settings;
+  if (!settings || typeof settings !== "object") return "";
+  const todoFilePath = (settings as Record<string, unknown>).todoFilePath;
+  return typeof todoFilePath === "string" ? todoFilePath : "";
 }
 
 function isPluginManifest(value: unknown): value is PluginManifest {

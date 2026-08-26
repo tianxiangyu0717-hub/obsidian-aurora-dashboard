@@ -16,6 +16,28 @@ export function normalizeTodoFilePath(value: string): string {
   return /\.md$/iu.test(path) ? path : `${path}.md`;
 }
 
+export function recoverTodoFilePath(
+  savedValue: unknown,
+  backupValue: unknown,
+  conflictValues: unknown[] = []
+): string {
+  const saved = normalizeTodoCandidate(savedValue);
+  if (saved) return saved;
+
+  const backup = normalizeTodoCandidate(backupValue);
+  if (backup) return backup;
+
+  for (const value of conflictValues) {
+    const conflict = normalizeTodoCandidate(value);
+    if (conflict) return conflict;
+  }
+  return "";
+}
+
+function normalizeTodoCandidate(value: unknown): string {
+  return typeof value === "string" ? normalizeTodoFilePath(value) : "";
+}
+
 const CJK_PATTERN =
   /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af]/gu;
 const WORD_PATTERN = /[\p{L}\p{N}]+(?:['’_-][\p{L}\p{N}]+)*/gu;

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.5
+
+- Preserve the configured Todo file path in an independent plugin-local backup.
+- Restore a missing Todo path after an update or iCloud conflict, including legacy conflict copies of `data.json`.
+
 ## 0.3.4
 
 - Redefine the connection-health metric as isolated notes with neither outgoing note links nor backlinks.
