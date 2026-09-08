@@ -49,7 +49,7 @@ export class AuroraSettingTab extends PluginSettingTab {
         control: {
           type: "toggle",
           key: "openOnStartup",
-          defaultValue: true
+          defaultValue: false
         }
       },
       {

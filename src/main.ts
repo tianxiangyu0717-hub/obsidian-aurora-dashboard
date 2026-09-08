@@ -25,6 +25,9 @@ export default class AuroraDashboardPlugin extends Plugin {
   stats!: StatsService;
   private saveTimer: number | null = null;
   private vaultEventsRegistered = false;
+  private saveQueue: Promise<void> = Promise.resolve();
+  private startupTimer: number | null = null;
+  private unloaded = false;
 
   async onload(): Promise<void> {
     await this.loadPluginData();
@@ -58,20 +61,27 @@ export default class AuroraDashboardPlugin extends Plugin {
     this.addSettingTab(new AuroraSettingTab(this.app, this));
 
     this.app.workspace.onLayoutReady(() => {
+      if (this.unloaded) return;
       this.registerVaultEvents();
-      if (this.data.settings.openOnStartup) {
-        window.setTimeout(() => {
+      this.startupTimer = window.setTimeout(() => {
+        this.startupTimer = null;
+        if (!this.unloaded && this.data.settings.openOnStartup) {
           void this.openDashboard(this.data.settings.startupMode);
-        }, 0);
-      }
+        }
+      }, 0);
     });
   }
 
   onunload(): void {
+    this.unloaded = true;
+    if (this.startupTimer !== null) {
+      window.clearTimeout(this.startupTimer);
+      this.startupTimer = null;
+    }
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
       this.saveTimer = null;
-      void this.saveData(this.data);
+      void this.persistData();
     }
   }
 
@@ -103,20 +113,65 @@ export default class AuroraDashboardPlugin extends Plugin {
     }
     this.saveTimer = window.setTimeout(() => {
       this.saveTimer = null;
-      void this.saveData(this.data);
+      void this.persistData();
     }, 500);
   }
 
   async saveSettings(): Promise<void> {
     this.stats.invalidate();
+    await this.persistData(true);
     await this.saveTodoPathBackup();
-    await this.saveData(this.data);
     this.refreshDashboardViews(true);
   }
 
   async saveDashboardPreferences(): Promise<void> {
-    await this.saveData(this.data);
+    await this.persistData();
     this.refreshDashboardViews();
+  }
+
+  // Every writer uses the same queue, so an older statistics save cannot
+  // finish after a newer settings save and restore the old toggle value.
+  private persistData(saveStartupPreference = false): Promise<void> {
+    const snapshot = structuredClone(this.data);
+    const write = this.saveQueue.then(async () => {
+      if (saveStartupPreference) {
+        await this.app.vault.adapter.write(
+          this.startupPreferenceFile,
+          `${JSON.stringify({
+            version: 1,
+            openOnStartup: snapshot.settings.openOnStartup,
+            startupMode: snapshot.settings.startupMode
+          }, null, 2)}\n`
+        );
+      }
+      await this.saveData(snapshot);
+    });
+    this.saveQueue = write.catch(() => undefined);
+    return write;
+  }
+
+  private get startupPreferenceFile(): string {
+    return normalizePath(`${this.pluginDataDir}/startup-preference.json`);
+  }
+
+  private async loadStartupPreference(): Promise<void> {
+    try {
+      if (!(await this.app.vault.adapter.exists(this.startupPreferenceFile))) return;
+      const value: unknown = JSON.parse(
+        await this.app.vault.adapter.read(this.startupPreferenceFile)
+      );
+      if (!value || typeof value !== "object") return;
+      const preference = value as Record<string, unknown>;
+      if (preference.version !== 1) return;
+      if (typeof preference.openOnStartup === "boolean") {
+        this.data.settings.openOnStartup = preference.openOnStartup;
+      }
+      if (preference.startupMode === "replace-active" || preference.startupMode === "new-tab") {
+        this.data.settings.startupMode = preference.startupMode;
+      }
+    } catch {
+      // Keep the primary settings if the independent preference is unavailable.
+    }
   }
 
   async getInstalledPlugins(): Promise<InstalledPlugin[]> {
@@ -202,9 +257,10 @@ export default class AuroraDashboardPlugin extends Plugin {
       trackingStartedAt: saved?.trackingStartedAt ?? null,
       linkTrackingStartedAt: saved?.linkTrackingStartedAt ?? null
     };
+    await this.loadStartupPreference();
     await this.saveTodoPathBackup();
     if (todoFilePath && !saved?.settings?.todoFilePath) {
-      await this.saveData(this.data);
+      await this.persistData();
     }
   }
 

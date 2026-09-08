@@ -111,7 +111,7 @@ export interface AuroraDataStore {
 
 export const DEFAULT_SETTINGS: AuroraSettings = {
   displayName: "",
-  openOnStartup: true,
+  openOnStartup: false,
   startupMode: "replace-active",
   shortNoteWordThreshold: 10,
   excludedFolders: [],
